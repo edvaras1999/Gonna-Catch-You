@@ -3,6 +3,8 @@
 #include <stdio.h>
 
 #include "common/ITypes.h"
+#include "ActorObserver.h"
+#include "GameTick.h"
 #include "skse/PluginAPI.h"
 #include "skse/skse_version.h"
 
@@ -78,21 +80,33 @@ namespace
 
         switch (message->type) {
         case SKSEMessagingInterface::kMessage_DataLoaded:
-            Log("SKSE DataLoaded; startup-only foundation active. No actor state is read or changed.");
+            Log("SKSE DataLoaded; checking the LE camera update hook before enabling read-only actor observation.");
+            GameTick::InstallHooks();
             break;
         case SKSEMessagingInterface::kMessage_NewGame:
+            ActorObserver::SetGameReady(true);
+            ActorObserver::Reset("new game started");
             Log("SKSE NewGame received.");
             break;
         case SKSEMessagingInterface::kMessage_PreLoadGame:
+            ActorObserver::SetGameReady(false);
+            ActorObserver::Reset("save load started");
             Log("SKSE PreLoadGame received.");
             break;
         case SKSEMessagingInterface::kMessage_PostLoadGame:
+            ActorObserver::SetGameReady(true);
+            ActorObserver::Reset("save load completed");
             Log("SKSE PostLoadGame received.");
             break;
         default:
             break;
         }
     }
+}
+
+void LogMessage(const char* message)
+{
+    Log(message);
 }
 
 extern "C"
@@ -145,3 +159,4 @@ extern "C"
         return true;
     }
 }
+

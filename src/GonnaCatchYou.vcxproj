@@ -59,7 +59,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="GameTick.cpp" />
+    <ClCompile Include="ActorObserver.cpp" />
     <None Include="GonnaCatchYou.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
+
