@@ -6,6 +6,7 @@
 #include <set>
 #include <stdio.h>
 
+#include "common/IPrefix.h"
 #include "common/ITypes.h"
 #include "skse/GameAPI.h"
 #include "skse/GameForms.h"
