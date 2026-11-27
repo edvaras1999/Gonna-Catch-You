@@ -7,6 +7,7 @@
 #include <string>
 
 #include "skse/GameAPI.h"
+#include "skse/GameFormComponents.h"
 #include "skse/GameForms.h"
 #include "skse/GameObjects.h"
 #include "skse/GameReferences.h"
@@ -41,9 +42,14 @@ namespace
         DWORD sampledAt;
         bool follower;
         bool hostileInCombat;
+        bool weaponStateKnown;
+        bool rangedWeaponEquipped;
+        bool fleeing;
+        bool dead;
     };
 
     std::map<UInt32, ActorSample> g_trackedActors;
+    std::set<UInt32> g_terminalActors;
     bool g_gameReady = false;
     bool g_limitLogged = false;
     bool g_sourceLogged = false;
@@ -86,11 +92,64 @@ namespace
         return sqrtf(dx * dx + dy * dy + dz * dz);
     }
 
-    const char* StateName(bool follower, bool hostile)
+    bool HasRangedWeaponEquipped(Actor* actor, bool& stateKnown)
     {
-        if (follower && hostile) return "HUMANOID_FOLLOWER+HOSTILE_COMBAT_CANDIDATE";
-        if (follower) return "HUMANOID_FOLLOWER";
-        return "HOSTILE_COMBAT_CANDIDATE";
+        stateKnown = false;
+        if (!actor || !IsReadableRange(actor, sizeof(Actor)) || !actor->processManager ||
+            !IsReadableRange(actor->processManager, sizeof(ActorProcessManager))) {
+            return false;
+        }
+
+        stateKnown = true;
+        for (UInt32 hand = 0; hand < 2; ++hand) {
+            TESForm* equipped = actor->processManager->equippedObject[hand];
+            if (!equipped || !IsReadableRange(equipped, sizeof(TESForm)) ||
+                equipped->formType != TESObjectWEAP::kTypeID) {
+                continue;
+            }
+
+            TESObjectWEAP* weapon = DYNAMIC_CAST(equipped, TESForm, TESObjectWEAP);
+            if (!weapon || !IsReadableRange(weapon, sizeof(TESObjectWEAP))) {
+                continue;
+            }
+
+            const UInt8 type = weapon->gameData.type;
+            if (type == TESObjectWEAP::GameData::kType_Bow ||
+                type == TESObjectWEAP::GameData::kType_CrossBow ||
+                type == TESObjectWEAP::GameData::kType_Bow2 ||
+                type == TESObjectWEAP::GameData::kType_CBow) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool IsFleeing(Actor* actor)
+    {
+        if (!actor || !IsReadableRange(actor, sizeof(Actor)) || !actor->processManager ||
+            !IsReadableRange(actor->processManager, sizeof(ActorProcessManager))) {
+            return false;
+        }
+
+        TESPackage* package = actor->processManager->package;
+        if (!package || !IsReadableRange(package, sizeof(TESPackage)) ||
+            package->formType != TESForm::kFormType_Package) {
+            return false;
+        }
+        return package->type == TESPackage::kPackageType_Flee ||
+            package->type == TESPackage::kPackageType_FleeNotCombat;
+    }
+
+    const char* StateName(const ActorSample& sample)
+    {
+        if (sample.dead) return "DEAD";
+        if (sample.fleeing) return "FLEEING";
+        if (sample.follower && sample.hostileInCombat) return "FOLLOWER+HOSTILE_COMBAT";
+        if (sample.follower) return "FOLLOWER";
+        if (sample.hostileInCombat && sample.rangedWeaponEquipped) return "HOSTILE_RANGED_COMBAT";
+        if (sample.hostileInCombat && !sample.weaponStateKnown) return "HOSTILE_WEAPON_STATE_UNKNOWN";
+        if (sample.hostileInCombat) return "HOSTILE_MELEE_COMBAT_CANDIDATE";
+        return "OUT_OF_SCOPE";
     }
 
     void LogActor(const char* eventName, const ActorSample& sample,
@@ -98,8 +157,8 @@ namespace
     {
         char line[512]{};
         sprintf_s(line,
-            "OBS %s state=%s ref=%08X base=%08X pos=(%.0f,%.0f,%.0f) distance3d=%.0f horizontal=%.0f dz=%.0f closingUnitsPerSec=%.1f",
-            eventName, StateName(sample.follower, sample.hostileInCombat), sample.formId,
+            "OBS %s state=%s rangedWeaponEquipped=%u ref=%08X base=%08X pos=(%.0f,%.0f,%.0f) distance3d=%.0f horizontal=%.0f dz=%.0f closingUnitsPerSec=%.1f",
+            eventName, StateName(sample), sample.rangedWeaponEquipped ? 1 : 0, sample.formId,
             sample.baseFormId, sample.x, sample.y, sample.z, sample.distance,
             horizontalDistance, verticalDifference, closingSpeed);
         LogMessage(line);
@@ -122,6 +181,7 @@ namespace ActorObserver
             LogMessage(line);
         }
         g_trackedActors.clear();
+        g_terminalActors.clear();
         g_limitLogged = false;
         g_sourceLogged = false;
     }
@@ -165,6 +225,7 @@ namespace ActorObserver
         }
 
         std::set<UInt32> seenThisScan;
+        std::set<UInt32> seenInProcessList;
         for (UInt32 index = 0; index < handleCount; ++index) {
             UInt32 handle = actorHandles[index];
             TESObjectREFR* reference = nullptr;
@@ -186,6 +247,7 @@ namespace ActorObserver
             if (!actor->baseForm || !DYNAMIC_CAST(actor->baseForm, TESForm, TESNPC)) {
                 continue;
             }
+            seenInProcessList.insert(actor->formID);
 
             const bool follower = (actor->flags1 & kFollowerFlag) != 0;
             const bool hostileInCombat = actor->IsInCombat() && CALL_MEMBER_FN(actor, IsHostileToActor)(player);
@@ -218,6 +280,24 @@ namespace ActorObserver
             sample.sampledAt = now;
             sample.follower = follower;
             sample.hostileInCombat = hostileInCombat;
+            sample.rangedWeaponEquipped = HasRangedWeaponEquipped(actor, sample.weaponStateKnown);
+            sample.fleeing = IsFleeing(actor);
+            sample.dead = actor->IsDead(1);
+
+            if (sample.dead || sample.fleeing) {
+                const bool firstTerminalObservation = g_terminalActors.insert(sample.formId).second;
+                auto terminal = g_trackedActors.find(sample.formId);
+                if (terminal != g_trackedActors.end()) {
+                    LogActor(sample.dead ? "EXIT_DEAD" : "EXIT_FLEEING", sample,
+                        horizontalDistance, dz, 0.0f);
+                    g_trackedActors.erase(terminal);
+                } else if (firstTerminalObservation) {
+                    LogActor(sample.dead ? "SKIP_DEAD" : "SKIP_FLEEING", sample,
+                        horizontalDistance, dz, 0.0f);
+                }
+                continue;
+            }
+            g_terminalActors.erase(sample.formId);
 
             seenThisScan.insert(sample.formId);
             auto previous = g_trackedActors.find(sample.formId);
@@ -230,7 +310,9 @@ namespace ActorObserver
             const ActorSample old = previous->second;
             const DWORD elapsed = now - old.sampledAt;
             const float closingSpeed = elapsed > 0 ? (old.distance - distance) * 1000.0f / elapsed : 0.0f;
-            if (old.follower != follower || old.hostileInCombat != hostileInCombat) {
+            if (old.follower != follower || old.hostileInCombat != hostileInCombat ||
+                old.weaponStateKnown != sample.weaponStateKnown ||
+                old.rangedWeaponEquipped != sample.rangedWeaponEquipped) {
                 LogActor("STATE_CHANGE", sample, horizontalDistance, dz, closingSpeed);
             }
             LogActor("SAMPLE", sample, horizontalDistance, dz, closingSpeed);
@@ -241,6 +323,14 @@ namespace ActorObserver
             if (seenThisScan.find(it->first) == seenThisScan.end()) {
                 LogActor("EXIT_OBSERVATION_SCOPE", it->second, 0.0f, 0.0f, 0.0f);
                 it = g_trackedActors.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        for (auto it = g_terminalActors.begin(); it != g_terminalActors.end();) {
+            if (seenInProcessList.find(*it) == seenInProcessList.end()) {
+                it = g_terminalActors.erase(it);
             } else {
                 ++it;
             }
