@@ -46,7 +46,7 @@
       <LanguageStandard>stdcpp14</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SKSE_COMPAT_ROOT);$(SKSE_COMPAT_ROOT)\skse;$(SKSE_SDK_ROOT)\src\skse\skse;$(SKSE_SDK_ROOT)\src\skse;$(SKSE_SDK_ROOT)\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <ForcedIncludeFiles>common/IPrefix.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <ForcedIncludeFiles>$(ProjectDir)SKSEBuildPrefix.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <ExceptionHandling>Sync</ExceptionHandling>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
@@ -62,10 +62,9 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GameTick.cpp" />
     <ClCompile Include="ActorObserver.cpp" />
-    <ClCompile Include="$(SKSE_SDK_ROOT)\src\skse\skse\GameAPI.cpp" />
-    <ClCompile Include="$(SKSE_SDK_ROOT)\src\skse\skse\GameRTTI.cpp" />
+    <ClCompile Include="$(SKSE_COMPAT_ROOT)\skse\GameAPI.cpp" />
+    <ClCompile Include="$(SKSE_COMPAT_ROOT)\skse\GameRTTI.cpp" />
     <None Include="GonnaCatchYou.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
-

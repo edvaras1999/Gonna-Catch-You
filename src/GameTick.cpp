@@ -4,7 +4,6 @@
 #include <stdio.h>
 
 #include "ActorObserver.h"
-#include "common/IPrefix.h"
 #include "skse/GameTypes.h"
 
 void LogMessage(const char* message);
@@ -178,4 +177,3 @@ namespace GameTick
         ActorObserver::Scan();
     }
 }
-

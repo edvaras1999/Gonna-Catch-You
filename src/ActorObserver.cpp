@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <string>
 
-#include "common/IPrefix.h"
 #include "skse/GameAPI.h"
 #include "skse/GameForms.h"
 #include "skse/GameObjects.h"
@@ -181,4 +180,3 @@ namespace ActorObserver
         }
     }
 }
-

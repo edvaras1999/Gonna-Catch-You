@@ -49,6 +49,8 @@ $compatSkseDir = Join-Path $compatRoot 'skse'
 New-Item -ItemType Directory -Force -Path $compatSkseDir | Out-Null
 $skseHeaderSourceDir = Join-Path $SdkRoot 'src\skse\skse'
 Copy-Item -Path (Join-Path $skseHeaderSourceDir '*') -Destination $compatSkseDir -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $skseHeaderSourceDir 'GameAPI.cpp') -Destination $compatSkseDir -Force
+Copy-Item -LiteralPath (Join-Path $skseHeaderSourceDir 'GameRTTI.cpp') -Destination $compatSkseDir -Force
 
 $gameTypesSource = Join-Path $compatSkseDir 'GameTypes.h'
 $gameTypesText = [IO.File]::ReadAllText($gameTypesSource)
@@ -92,5 +94,4 @@ if ($LASTEXITCODE -ne 0) { throw "GonnaCatchYou compilation failed (exit $LASTEX
 
 & (Join-Path $PSScriptRoot 'Package-Mod.ps1')
 if ($LASTEXITCODE -ne 0) { throw "Install package assembly failed (exit $LASTEXITCODE)." }
-
 
