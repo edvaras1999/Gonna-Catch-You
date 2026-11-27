@@ -20,8 +20,15 @@ void LogMessage(const char* message);
 namespace
 {
     const UInt32 kFollowerFlag = Actor::kFlags_IsPlayerTeammate;
-    const UInt32 kMaximumCellReferences = 4096;
+    // Skyrim LE 1.9.32 layout: ProcessLists* at 0x012E32E8, high actor
+    // handle array at +0x28 and count at +0x30 (verified in the LE layout data).
+    const UInt32 kProcessListsGlobal = 0x012E32E8;
+    const UInt32 kHighActorEntriesOffset = 0x28;
+    const UInt32 kHighActorCountOffset = 0x30;
+    const UInt32 kMaximumHighActorHandles = 1024;
     const UInt32 kMaximumTrackedActors = 48;
+    // SKSE LE LookupREFRByHandle from GameReferences.cpp; it returns a retained ref.
+    const _LookupREFRByHandle kLookupREFRByHandle = reinterpret_cast<_LookupREFRByHandle>(0x004A9180);
 
     struct ActorSample
     {
@@ -39,6 +46,37 @@ namespace
     std::map<UInt32, ActorSample> g_trackedActors;
     bool g_gameReady = false;
     bool g_limitLogged = false;
+    bool g_sourceLogged = false;
+
+    bool IsReadableRange(const void* address, SIZE_T bytes)
+    {
+        if (!address || bytes == 0) {
+            return false;
+        }
+
+        MEMORY_BASIC_INFORMATION info{};
+        if (!VirtualQuery(address, &info, sizeof(info)) || info.State != MEM_COMMIT ||
+            (info.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+            return false;
+        }
+
+        const BYTE* start = static_cast<const BYTE*>(address);
+        const BYTE* end = start + bytes;
+        const BYTE* regionEnd = static_cast<const BYTE*>(info.BaseAddress) + info.RegionSize;
+        return end >= start && end <= regionEnd;
+    }
+
+    struct HandleReferenceGuard
+    {
+        explicit HandleReferenceGuard(TESObjectREFR* value) : reference(value) {}
+        ~HandleReferenceGuard()
+        {
+            if (reference) {
+                reference->handleRefObject.DecRefHandle();
+            }
+        }
+        TESObjectREFR* reference;
+    };
 
     float Distance3D(float ax, float ay, float az, float bx, float by, float bz)
     {
@@ -85,6 +123,7 @@ namespace ActorObserver
         }
         g_trackedActors.clear();
         g_limitLogged = false;
+        g_sourceLogged = false;
     }
 
     void Scan()
@@ -94,23 +133,51 @@ namespace ActorObserver
         }
 
         PlayerCharacter* player = *g_thePlayer;
-        TESObjectCELL* cell = player->parentCell;
-        if (!cell || !cell->objectList.arr.entries) {
+        if (!IsReadableRange(reinterpret_cast<const void*>(kProcessListsGlobal), sizeof(UInt32))) {
             return;
         }
 
-        std::set<UInt32> seenThisScan;
-        const UInt32 referenceCount = cell->objectList.count < kMaximumCellReferences
-            ? cell->objectList.count : kMaximumCellReferences;
+        void* processLists = *reinterpret_cast<void**>(kProcessListsGlobal);
+        if (!IsReadableRange(processLists, kHighActorCountOffset + sizeof(UInt32))) {
+            return;
+        }
 
-        for (UInt32 index = 0; index < referenceCount; ++index) {
+        UInt32* actorHandles = *reinterpret_cast<UInt32**>(
+            static_cast<UInt8*>(processLists) + kHighActorEntriesOffset);
+        const UInt32 actorHandleCount = *reinterpret_cast<UInt32*>(
+            static_cast<UInt8*>(processLists) + kHighActorCountOffset);
+        if (actorHandleCount > 0 && !actorHandles) {
+            return;
+        }
+
+        const UInt32 handleCount = actorHandleCount < kMaximumHighActorHandles
+            ? actorHandleCount : kMaximumHighActorHandles;
+        if (handleCount > 0 && !IsReadableRange(actorHandles, sizeof(UInt32) * handleCount)) {
+            return;
+        }
+        if (!g_sourceLogged) {
+            LogMessage("OBS source=LE ProcessLists high-process actor handles; scanning active actors outside the player's cell.");
+            g_sourceLogged = true;
+        }
+        if (actorHandleCount > kMaximumHighActorHandles && !g_limitLogged) {
+            LogMessage("OBS high-process actor handle limit reached; additional active handles are skipped.");
+            g_limitLogged = true;
+        }
+
+        std::set<UInt32> seenThisScan;
+        for (UInt32 index = 0; index < handleCount; ++index) {
+            UInt32 handle = actorHandles[index];
             TESObjectREFR* reference = nullptr;
-            if (!cell->objectList.GetNthItem(index, reference) || !reference || reference == player) {
+            if (!handle || !kLookupREFRByHandle(&handle, &reference) || !reference) {
+                continue;
+            }
+            HandleReferenceGuard referenceGuard(reference);
+            if (reference == player) {
                 continue;
             }
 
             Actor* actor = DYNAMIC_CAST(reference, TESObjectREFR, Actor);
-            if (!actor || !actor->formID || actor->parentCell != cell) {
+            if (!actor || !actor->formID) {
                 continue;
             }
 
@@ -129,7 +196,7 @@ namespace ActorObserver
             if (g_trackedActors.find(actor->formID) == g_trackedActors.end() &&
                 g_trackedActors.size() >= kMaximumTrackedActors) {
                 if (!g_limitLogged) {
-                    LogMessage("OBS actor limit reached; additional eligible actors in this cell are being skipped.");
+                    LogMessage("OBS tracked actor limit reached; additional eligible active actors are being skipped.");
                     g_limitLogged = true;
                 }
                 continue;
