@@ -15,7 +15,19 @@ if (-not $SdkRoot) {
     } elseif ($SdkArchive) {
         $dependencyRoot = Join-Path $repoRoot 'build\deps\skse'
         New-Item -ItemType Directory -Force -Path $dependencyRoot | Out-Null
-        & tar -xf $SdkArchive -C $dependencyRoot
+        $sevenZipCandidates = @(
+            (Join-Path $env:ProgramFiles '7-Zip\7z.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} '7-Zip\7z.exe')
+        )
+        $sevenZipCommand = Get-Command 7z.exe -ErrorAction SilentlyContinue
+        if ($sevenZipCommand) {
+            $sevenZipCandidates = @($sevenZipCommand.Source) + $sevenZipCandidates
+        }
+        $sevenZip = $sevenZipCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+        if (-not $sevenZip) {
+            throw '7-Zip was not found; it is required to extract the official SKSE .7z archive.'
+        }
+        & $sevenZip x $SdkArchive "-o$dependencyRoot" -y | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Could not extract SKSE LE source archive (exit $LASTEXITCODE)." }
         $SdkRoot = $defaultSdkRoot
     }
@@ -50,3 +62,4 @@ if ($LASTEXITCODE -ne 0) { throw "GonnaCatchYou compilation failed (exit $LASTEX
 
 & (Join-Path $PSScriptRoot 'Package-Mod.ps1')
 if ($LASTEXITCODE -ne 0) { throw "Install package assembly failed (exit $LASTEXITCODE)." }
+
