@@ -42,6 +42,34 @@ if (-not (Test-Path -LiteralPath (Join-Path $SdkRoot 'src\common\ITypes.h')) -or
     throw "The selected SDK is incomplete or has an unexpected layout: $SdkRoot"
 }
 
+# SKSE 1.7.3's public headers contain legacy declarations rejected by current
+# MSVC. Build from a local compatibility copy; leave the supplied SDK untouched.
+$compatRoot = Join-Path $repoRoot 'build\deps\skse-compat'
+$compatSkseDir = Join-Path $compatRoot 'skse'
+New-Item -ItemType Directory -Force -Path $compatSkseDir | Out-Null
+
+$gameTypesSource = Join-Path $SdkRoot 'src\skse\skse\GameTypes.h'
+$gameTypesText = [IO.File]::ReadAllText($gameTypesSource)
+$gameTypesText = [regex]::Replace($gameTypesText,
+    '(?m)^(class tList\s*\{)', '$1' + [Environment]::NewLine + "`tusing Item = T;", 1)
+$gameTypesText = [regex]::Replace($gameTypesText,
+    '(?s)\r?\n\s*const _Node\* FindString\(char\* str, Iterator prev\) const\s*\{\s*return Find\(StringFinder_CI\(str\), prev\);\s*\}', '')
+if ($gameTypesText -notmatch 'using Item = T;' -or $gameTypesText -match 'FindString\(char\* str') {
+    throw 'Could not apply the SKSE GameTypes compatibility adjustment.'
+}
+[IO.File]::WriteAllText((Join-Path $compatSkseDir 'GameTypes.h'), $gameTypesText,
+    [Text.UTF8Encoding]::new($false))
+
+$niTypesSource = Join-Path $SdkRoot 'src\skse\skse\NiTypes.h'
+$niTypesText = [IO.File]::ReadAllText($niTypesSource)
+$niTypesText = $niTypesText.Replace('void NiTLargeArray::Append(', 'void Append(')
+$niTypesText = $niTypesText.Replace('void NiTLargeArray::Resize(', 'void Resize(')
+if ($niTypesText -match 'void NiTLargeArray::(Append|Resize)\(') {
+    throw 'Could not apply the SKSE NiTypes compatibility adjustment.'
+}
+[IO.File]::WriteAllText((Join-Path $compatSkseDir 'NiTypes.h'), $niTypesText,
+    [Text.UTF8Encoding]::new($false))
+
 if (-not $MSBuildPath) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path -LiteralPath $vswhere) {
@@ -57,9 +85,10 @@ if (-not $MSBuildPath -or -not (Test-Path -LiteralPath $MSBuildPath)) {
 }
 
 $project = Join-Path $repoRoot 'src\GonnaCatchYou.vcxproj'
-& $MSBuildPath $project /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 "/p:SKSE_SDK_ROOT=$SdkRoot" /v:minimal
+& $MSBuildPath $project /m /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 "/p:SKSE_SDK_ROOT=$SdkRoot" "/p:SKSE_COMPAT_ROOT=$compatRoot" /v:minimal
 if ($LASTEXITCODE -ne 0) { throw "GonnaCatchYou compilation failed (exit $LASTEXITCODE)." }
 
 & (Join-Path $PSScriptRoot 'Package-Mod.ps1')
 if ($LASTEXITCODE -ne 0) { throw "Install package assembly failed (exit $LASTEXITCODE)." }
+
 

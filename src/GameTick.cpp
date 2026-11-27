@@ -7,6 +7,8 @@
 #include "common/IPrefix.h"
 #include "skse/GameTypes.h"
 
+void LogMessage(const char* message);
+
 namespace
 {
     // Skyrim LE 1.9.32.0.8 camera-state vtables; also used by FreeRun LE.

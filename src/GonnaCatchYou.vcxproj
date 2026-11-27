@@ -45,7 +45,7 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SKSE_SDK_ROOT)\src\skse;$(SKSE_SDK_ROOT)\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SKSE_COMPAT_ROOT);$(SKSE_SDK_ROOT)\src\skse;$(SKSE_SDK_ROOT)\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
