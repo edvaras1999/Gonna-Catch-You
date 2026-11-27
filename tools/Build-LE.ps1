@@ -47,8 +47,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $SdkRoot 'src\common\ITypes.h')) -or
 $compatRoot = Join-Path $repoRoot 'build\deps\skse-compat'
 $compatSkseDir = Join-Path $compatRoot 'skse'
 New-Item -ItemType Directory -Force -Path $compatSkseDir | Out-Null
+$skseHeaderSourceDir = Join-Path $SdkRoot 'src\skse\skse'
+Copy-Item -Path (Join-Path $skseHeaderSourceDir '*') -Destination $compatSkseDir -Recurse -Force
 
-$gameTypesSource = Join-Path $SdkRoot 'src\skse\skse\GameTypes.h'
+$gameTypesSource = Join-Path $compatSkseDir 'GameTypes.h'
 $gameTypesText = [IO.File]::ReadAllText($gameTypesSource)
 $gameTypesText = [regex]::Replace($gameTypesText,
     '(?m)^(class tList\s*\{)', '$1' + [Environment]::NewLine + "`tusing Item = T;", 1)
@@ -60,7 +62,7 @@ if ($gameTypesText -notmatch 'using Item = T;' -or $gameTypesText -match 'FindSt
 [IO.File]::WriteAllText((Join-Path $compatSkseDir 'GameTypes.h'), $gameTypesText,
     [Text.UTF8Encoding]::new($false))
 
-$niTypesSource = Join-Path $SdkRoot 'src\skse\skse\NiTypes.h'
+$niTypesSource = Join-Path $compatSkseDir 'NiTypes.h'
 $niTypesText = [IO.File]::ReadAllText($niTypesSource)
 $niTypesText = $niTypesText.Replace('void NiTLargeArray::Append(', 'void Append(')
 $niTypesText = $niTypesText.Replace('void NiTLargeArray::Resize(', 'void Resize(')
