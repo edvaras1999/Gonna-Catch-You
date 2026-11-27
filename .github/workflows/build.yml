@@ -1,1 +1,42 @@
-=ªìz±+®ŠËŠw¶ë„­®)à áb•ä^iÐ%”­zÂhŠsÚ¶ž´ºjØ¨ž–­…IÞÆ—œµçm¢G§Šw±¦·¬²*'¢»-j×¦z{
+name: Build Skyrim LE mod
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-le:
+    name: Build installable LE package
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download official SKSE LE 1.7.3 source archive
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'skse_1_07_03.7z'
+          Invoke-WebRequest `
+            -Uri 'https://skse.silverlock.org/beta/skse_1_07_03.7z' `
+            -OutFile $archive
+          "SKSE_ARCHIVE=$archive" >> $env:GITHUB_ENV
+
+      - name: Build and package
+        shell: pwsh
+        run: .\tools\Build-LE.ps1 -SdkArchive $env:SKSE_ARCHIVE
+
+      - name: Upload installable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: GonnaCatchYou-LE-install
+          path: out/GonnaCatchYou-LE-install.zip
+          if-no-files-found: error
+          retention-days: 14
+
