@@ -1,11 +1,10 @@
 #include "GameTick.h"
 
-#include <Windows.h>
+#include <string>
 #include <stdio.h>
 
 #include "ActorObserver.h"
 #include "common/IPrefix.h"
-#include "common/ITypes.h"
 #include "skse/GameTypes.h"
 
 namespace
