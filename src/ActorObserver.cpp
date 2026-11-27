@@ -133,7 +133,7 @@ namespace
 
         TESPackage* package = actor->processManager->package;
         if (!package || !IsReadableRange(package, sizeof(TESPackage)) ||
-            package->formType != TESForm::kFormType_Package) {
+            package->formType != TESPackage::kTypeID) {
             return false;
         }
         return package->type == TESPackage::kPackageType_Flee ||
